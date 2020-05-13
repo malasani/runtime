@@ -230,11 +230,24 @@ int LinearScan::BuildNode(GenTree* tree)
             // is processed, unless this is marked "isLocalDefUse" because it is a stack-based argument
             // to a call or an orphaned dead node.
             //
-            LclVarDsc* const varDsc = &compiler->lvaTable[tree->AsLclVarCommon()->GetLclNum()];
+            GenTreeLclVarCommon* const lclVar = tree->AsLclVarCommon();
+            LclVarDsc* const           varDsc = compiler->lvaGetDesc(lclVar);
             if (isCandidateVar(varDsc))
             {
                 return 0;
             }
+
+            if (lclVar->OperIs(GT_LCL_FLD) && lclVar->AsLclFld()->IsOffsetMisaligned())
+            {
+                buildInternalIntRegisterDefForNode(lclVar); // to generate address.
+                buildInternalIntRegisterDefForNode(lclVar); // to move float into an int reg.
+                if (lclVar->TypeIs(TYP_DOUBLE))
+                {
+                    buildInternalIntRegisterDefForNode(lclVar); // to move the second half into an int reg.
+                }
+                buildInternalRegisterUses();
+            }
+
             srcCount = 0;
             BuildDef(tree);
         }
@@ -749,7 +762,6 @@ int LinearScan::BuildNode(GenTree* tree)
 
         case GT_BITCAST:
         {
-            srcCount = 1;
             assert(dstCount == 1);
             regNumber argReg  = tree->GetRegNum();
             regMaskTP argMask = genRegMask(argReg);
@@ -763,8 +775,15 @@ int LinearScan::BuildNode(GenTree* tree)
                 argMask |= genRegMask(REG_NEXT(argReg));
                 dstCount = 2;
             }
-
-            BuildUse(tree->gtGetOp1());
+            if (!tree->gtGetOp1()->isContained())
+            {
+                BuildUse(tree->gtGetOp1());
+                srcCount = 1;
+            }
+            else
+            {
+                srcCount = 0;
+            }
             BuildDefs(tree, dstCount, argMask);
         }
         break;

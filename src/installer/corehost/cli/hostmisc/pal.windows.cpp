@@ -49,11 +49,6 @@ pal::string_t pal::to_lower(const pal::string_t& in)
     return ret;
 }
 
-pal::string_t pal::to_string(int value)
-{
-    return std::to_wstring(value);
-}
-
 pal::string_t pal::get_timestamp()
 {
     std::time_t t = std::time(0);
@@ -76,44 +71,61 @@ bool pal::touch_file(const pal::string_t& path)
     return true;
 }
 
-void* pal::map_file_readonly(const pal::string_t& path, size_t &length)
+static void* map_file(const pal::string_t& path, size_t *length, DWORD mapping_protect, DWORD view_desired_access)
 {
     HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (file == INVALID_HANDLE_VALUE)
     {
-        trace::warning(_X("Failed to map file. CreateFileW(%s) failed with error %d"), path.c_str(), GetLastError());
+        trace::error(_X("Failed to map file. CreateFileW(%s) failed with error %d"), path.c_str(), GetLastError());
         return nullptr;
     }
 
-    LARGE_INTEGER fileSize;
-    if (GetFileSizeEx(file, &fileSize) == 0)
+    if (length != nullptr)
     {
-        trace::warning(_X("Failed to map file. GetFileSizeEx(%s) failed with error %d"), path.c_str(), GetLastError());
-        CloseHandle(file);
-        return nullptr;
+        LARGE_INTEGER fileSize;
+        if (GetFileSizeEx(file, &fileSize) == 0)
+        {
+            trace::error(_X("Failed to map file. GetFileSizeEx(%s) failed with error %d"), path.c_str(), GetLastError());
+            CloseHandle(file);
+            return nullptr;
+        }
+        *length = (size_t)fileSize.QuadPart;
     }
-    length = (size_t)fileSize.QuadPart;
 
-    HANDLE map = CreateFileMappingW(file, NULL, PAGE_READONLY, 0, 0, NULL);
+    HANDLE map = CreateFileMappingW(file, NULL, mapping_protect, 0, 0, NULL);
 
     if (map == NULL)
     {
-        trace::warning(_X("Failed to map file. CreateFileMappingW(%s) failed with error %d"), path.c_str(), GetLastError());
+        trace::error(_X("Failed to map file. CreateFileMappingW(%s) failed with error %d"), path.c_str(), GetLastError());
         CloseHandle(file);
         return nullptr;
     }
 
-    void *address = MapViewOfFile(map, FILE_MAP_READ, 0, 0, 0);
+    void *address = MapViewOfFile(map, view_desired_access, 0, 0, 0);
 
-    if (map == NULL)
+    if (address == NULL)
     {
-        trace::warning(_X("Failed to map file. MapViewOfFile(%s) failed with error %d"), path.c_str(), GetLastError());
-        CloseHandle(file);
-        return nullptr;
+        trace::error(_X("Failed to map file. MapViewOfFile(%s) failed with error %d"), path.c_str(), GetLastError());
     }
+
+    // The file-handle (file) and mapping object handle (map) can be safely closed
+    // once the file is mapped. The OS keeps the file open if there is an open mapping into the file.
+
+    CloseHandle(map);
+    CloseHandle(file);
 
     return address;
+}
+
+const void* pal::mmap_read(const string_t& path, size_t* length)
+{
+    return map_file(path, length, PAGE_READONLY, FILE_MAP_READ);
+}
+
+void* pal::mmap_copy_on_write(const string_t& path, size_t* length)
+{
+    return map_file(path, length, PAGE_WRITECOPY, FILE_MAP_READ | FILE_MAP_COPY);
 }
 
 bool pal::getcwd(pal::string_t* recv)
@@ -222,10 +234,10 @@ void pal::unload_library(dll_t library)
 static
 bool get_wow_mode_program_files(pal::string_t* recv)
 {
-#if defined(_TARGET_AMD64_)
-    pal::char_t* env_key = _X("ProgramFiles(x86)");
+#if defined(TARGET_AMD64)
+    const pal::char_t* env_key = _X("ProgramFiles(x86)");
 #else
-    pal::char_t* env_key = _X("ProgramFiles");
+    const pal::char_t* env_key = _X("ProgramFiles");
 #endif
 
     return get_file_path_from_env(env_key,recv);
@@ -270,7 +282,7 @@ bool pal::get_default_installation_dir(pal::string_t* recv)
     }
     //  ***************************
 
-    pal::char_t* program_files_dir;
+    const pal::char_t* program_files_dir;
     if (pal::is_running_in_wow64())
     {
         program_files_dir = _X("ProgramFiles(x86)");
@@ -292,7 +304,7 @@ bool pal::get_default_installation_dir(pal::string_t* recv)
 
 namespace
 {
-    void get_dotnet_install_location_registry_path(HKEY * key_hive, pal::string_t * sub_key, pal::char_t ** value)
+    void get_dotnet_install_location_registry_path(HKEY * key_hive, pal::string_t * sub_key, const pal::char_t ** value)
     {
         *key_hive = HKEY_LOCAL_MACHINE;
         // The registry search occurs in the 32-bit registry in all cases.
@@ -318,12 +330,12 @@ namespace
 
 bool pal::get_dotnet_self_registered_config_location(pal::string_t* recv)
 {
-#if !defined(_TARGET_AMD64_) && !defined(_TARGET_X86_)
+#if !defined(TARGET_AMD64) && !defined(TARGET_X86)
     return false;
 #else
     HKEY key_hive;
     pal::string_t sub_key;
-    pal::char_t* value;
+    const pal::char_t* value;
     get_dotnet_install_location_registry_path(&key_hive, &sub_key, &value);
 
     *recv = (key_hive == HKEY_CURRENT_USER ? _X("HKCU\\") : _X("HKLM\\")) + sub_key + _X("\\") + value;
@@ -333,7 +345,7 @@ bool pal::get_dotnet_self_registered_config_location(pal::string_t* recv)
 
 bool pal::get_dotnet_self_registered_dir(pal::string_t* recv)
 {
-#if !defined(_TARGET_AMD64_) && !defined(_TARGET_X86_)
+#if !defined(TARGET_AMD64) && !defined(TARGET_X86)
     //  Self-registered SDK installation directory is only supported for x64 and x86 architectures.
     return false;
 #else
@@ -350,7 +362,7 @@ bool pal::get_dotnet_self_registered_dir(pal::string_t* recv)
 
     HKEY hkeyHive;
     pal::string_t sub_key;
-    pal::char_t* value;
+    const pal::char_t* value;
     get_dotnet_install_location_registry_path(&hkeyHive, &sub_key, &value);
 
     // Must use RegOpenKeyEx to be able to specify KEY_WOW64_32KEY to access the 32-bit registry in all cases.
@@ -560,7 +572,32 @@ bool pal::get_temp_directory(pal::string_t& tmp_dir)
     assert(len < max_len);
     tmp_dir.assign(temp_path);
 
-    return pal::realpath(&tmp_dir);
+    return realpath(&tmp_dir);
+}
+
+bool pal::get_default_bundle_extraction_base_dir(pal::string_t& extraction_dir)
+{
+    if (!get_temp_directory(extraction_dir))
+    {
+        return false;
+    }
+
+    append_path(&extraction_dir, _X(".net"));
+    // Windows Temp-Path is already user-private.
+
+    if (realpath(&extraction_dir))
+    {
+        return true;
+    }
+
+    // Create the %TEMP%\.net directory
+    if (CreateDirectoryW(extraction_dir.c_str(), NULL) == 0 &&
+        GetLastError() != ERROR_ALREADY_EXISTS)
+    {
+        return false;
+    }
+
+    return realpath(&extraction_dir);
 }
 
 static bool wchar_convert_helper(DWORD code_page, const char* cstr, int len, pal::string_t* out)
@@ -606,13 +643,20 @@ bool pal::clr_palstring(const char* cstr, pal::string_t* out)
     return wchar_convert_helper(CP_UTF8, cstr, ::strlen(cstr), out);
 }
 
+bool pal::unicode_palstring(const char16_t* str, pal::string_t* out)
+{
+    out->assign((const wchar_t *)str);
+    return true;
+}
+
 // Return if path is valid and file exists, return true and adjust path as appropriate.
 bool pal::realpath(string_t* path, bool skip_error_logging)
 {
-    if (LongFile::IsNormalized(path->c_str()))
+    if (LongFile::IsNormalized(*path))
     {
         WIN32_FILE_ATTRIBUTE_DATA data;
-        if (GetFileAttributesExW(path->c_str(), GetFileExInfoStandard, &data) != 0)
+        if (path->empty() // An empty path doesn't exist
+            || GetFileAttributesExW(path->c_str(), GetFileExInfoStandard, &data) != 0)
         {
             return true;
         }

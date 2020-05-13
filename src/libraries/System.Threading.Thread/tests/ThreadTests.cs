@@ -160,6 +160,7 @@ namespace System.Threading.Threads.Tests
         }
 
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsNotWindowsNanoServer))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/34543", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
         [InlineData("STAMain.exe", "GetApartmentStateTest")]
         [InlineData("STAMain.exe", "SetApartmentStateTest")]
         [InlineData("STAMain.exe", "WaitAllNotSupportedOnSta_Test0")]
@@ -182,6 +183,7 @@ namespace System.Threading.Threads.Tests
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/34543", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
         [PlatformSpecific(TestPlatforms.Windows)]
         public static void ApartmentState_NoAttributePresent_DefaultState_Windows()
         {
@@ -226,6 +228,7 @@ namespace System.Threading.Threads.Tests
         }
 
         [Theory]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/34543", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
         [MemberData(nameof(ApartmentStateTest_MemberData))]
         [PlatformSpecific(TestPlatforms.Windows)]  // Expected behavior differs on Unix and Windows
         public static void GetSetApartmentStateTest_ChangeAfterThreadStarted_Windows(
@@ -248,6 +251,7 @@ namespace System.Threading.Threads.Tests
         }
 
         [ConditionalTheory(typeof(PlatformDetection), nameof(PlatformDetection.IsNotWindowsNanoServer))]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/34543", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
         [MemberData(nameof(ApartmentStateTest_MemberData))]
         [PlatformSpecific(TestPlatforms.Windows)]  // Expected behavior differs on Unix and Windows
         public static void ApartmentStateTest_ChangeBeforeThreadStarted_Windows(
@@ -327,7 +331,8 @@ namespace System.Threading.Threads.Tests
             CultureInfo uiCulture = (CultureInfo)CultureInfo.CurrentCulture.Clone();
 
             ExceptionDispatchInfo exceptionFromThread = null;
-            var t = new Thread(() => {
+            var t = new Thread(() =>
+            {
                 try
                 {
                     Assert.Same(culture, Thread.CurrentThread.CurrentCulture);
@@ -432,11 +437,12 @@ namespace System.Threading.Threads.Tests
             {
                 Thread.CurrentPrincipal = new ClaimsPrincipal();
 
-                await Task.Run(async() => {
+                await Task.Run(async () =>
+                {
 
                     Assert.IsType<ClaimsPrincipal>(Thread.CurrentPrincipal);
 
-                    await Task.Run(async() =>
+                    await Task.Run(async () =>
                     {
                         Assert.IsType<ClaimsPrincipal>(Thread.CurrentPrincipal);
 
@@ -465,7 +471,7 @@ namespace System.Threading.Threads.Tests
                 Thread.CurrentPrincipal = new ClaimsPrincipal();
 
                 Task task;
-                using(ExecutionContext.SuppressFlow())
+                using (ExecutionContext.SuppressFlow())
                 {
                     Assert.True(ExecutionContext.IsFlowSuppressed());
 
@@ -643,6 +649,21 @@ namespace System.Threading.Threads.Tests
                 Assert.Throws<InvalidOperationException>(() => ct.Name = name + "b");
                 Assert.Equal(name, ct.Name);
             });
+        }
+
+        [Fact]
+        [ActiveIssue ("https://github.com/dotnet/runtime/issues/35908", TestRuntimes.Mono)]
+        public static void ThreadNameDoesNotAffectProcessName()
+        {
+            // On Linux, changing the main thread name affects ProcessName.
+            // To avoid that, .NET ignores requests to change the main thread name.
+            RemoteExecutor.Invoke(() =>
+            {
+                const string ThreadName = "my-thread";
+                Thread.CurrentThread.Name = ThreadName;
+                Assert.Equal(ThreadName, Thread.CurrentThread.Name);
+                Assert.NotEqual(ThreadName, Process.GetCurrentProcess().ProcessName);
+            }).Dispose();
         }
 
         [Fact]
@@ -1109,6 +1130,87 @@ namespace System.Threading.Threads.Tests
                 AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
                 Assert.Equal(Environment.UserDomainName + @"\" + Environment.UserName, Thread.CurrentPrincipal.Identity.Name);
             }).Dispose();
+        }
+
+
+        [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/34543", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
+        [PlatformSpecific(TestPlatforms.Windows)]
+        public static void WindowsPrincipalPolicyTest_Windows_NewThreads()
+        {
+            RemoteExecutor.Invoke(() =>
+            {
+                AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
+
+                IPrincipal currentPrincipal = Thread.CurrentPrincipal;
+
+                Assert.NotNull(currentPrincipal);
+                Assert.True(currentPrincipal.Identity.IsAuthenticated);
+
+                var first = new Thread(CheckPrincipal);
+                first.Start(currentPrincipal);
+                first.Join();
+
+                var second = new Thread(CheckPrincipal);
+                second.Start(currentPrincipal);
+                second.Join();
+            }).Dispose();
+
+            static void CheckPrincipal(object principal)
+            {
+                Assert.True(Thread.CurrentPrincipal.Identity.IsAuthenticated);
+                Assert.NotNull(Thread.CurrentPrincipal);
+                Assert.Equal((IPrincipal)principal, Thread.CurrentPrincipal);
+            }
+        }
+
+        [Fact]
+        public static void NoPrincipalPolicyTest_NewThreads()
+        {
+            RemoteExecutor.Invoke(() =>
+            {
+                AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.NoPrincipal);
+
+                Assert.Null(Thread.CurrentPrincipal);
+
+                var first = new Thread(() => Assert.Null(Thread.CurrentPrincipal));
+                first.Start();
+                first.Join();
+
+                var second = new Thread(() => Assert.Null(Thread.CurrentPrincipal));
+                second.Start();
+                second.Join();
+            }).Dispose();
+        }
+
+        [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/34543", TestPlatforms.Windows, TargetFrameworkMonikers.Netcoreapp, TestRuntimes.Mono)]
+        [PlatformSpecific(TestPlatforms.Windows)]
+        public static void NoPrincipalToWindowsPrincipalPolicyTest_Windows_NewThreads()
+        {
+            RemoteExecutor.Invoke(() =>
+            {
+                AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.NoPrincipal);
+
+                Assert.Null(Thread.CurrentPrincipal);
+
+                var first = new Thread(() => Assert.Null(Thread.CurrentPrincipal));
+                first.Start();
+                first.Join();
+
+                AppDomain.CurrentDomain.SetPrincipalPolicy(PrincipalPolicy.WindowsPrincipal);
+
+                var second = new Thread(CheckPrincipal);
+                second.Start(Thread.CurrentPrincipal);
+                second.Join();
+            }).Dispose();
+
+            static void CheckPrincipal(object principal)
+            {
+                Assert.True(Thread.CurrentPrincipal.Identity.IsAuthenticated);
+                Assert.NotNull(Thread.CurrentPrincipal);
+                Assert.Equal((IPrincipal)principal, Thread.CurrentPrincipal);
+            }
         }
 
         [Fact]

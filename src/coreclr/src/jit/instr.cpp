@@ -662,6 +662,7 @@ void CodeGen::inst_TT_RV(instruction ins, emitAttr size, GenTree* tree, regNumbe
 #ifdef DEBUG
     // The tree must have a valid register value.
     assert(reg != REG_STK);
+
     bool isValidInReg = ((tree->gtFlags & GTF_SPILLED) == 0);
     if (!isValidInReg)
     {
@@ -1817,6 +1818,7 @@ instruction CodeGenInterface::ins_Load(var_types srcType, bool aligned /*=false*
  */
 instruction CodeGen::ins_Copy(var_types dstType)
 {
+    assert(emitTypeActSz[dstType] != 0);
 #if defined(TARGET_XARCH)
     if (varTypeIsSIMD(dstType))
     {
@@ -1850,10 +1852,60 @@ instruction CodeGen::ins_Copy(var_types dstType)
     {
         return INS_mov;
     }
-#elif defined(TARGET_X86)
+#else // TARGET_*
+#error "Unknown TARGET_"
+#endif
+}
+
+//------------------------------------------------------------------------
+//  ins_Copy: Get the machine dependent instruction for performing a reg-reg copy
+//            from srcReg to a register of dstType.
+//
+// Arguments:
+//      srcReg  - source register
+//      dstType - destination type
+//
+// Notes:
+//    This assumes the size of the value in 'srcReg' is the same as the size of
+//    'dstType'.
+//
+instruction CodeGen::ins_Copy(regNumber srcReg, var_types dstType)
+{
+    bool dstIsFloatReg = isFloatRegType(dstType);
+    bool srcIsFloatReg = genIsValidFloatReg(srcReg);
+    if (srcIsFloatReg == dstIsFloatReg)
+    {
+        return ins_Copy(dstType);
+    }
+#if defined(TARGET_XARCH)
+    if (dstIsFloatReg)
+    {
+        return INS_mov_i2xmm;
+    }
+    else
+    {
+        return INS_mov_xmm2i;
+    }
+#elif defined(TARGET_ARM64)
+    if (dstIsFloatReg)
+    {
+        return INS_fmov;
+    }
+    else
+    {
+        return INS_mov;
+    }
+#elif defined(TARGET_ARM)
+    // No SIMD support yet
     assert(!varTypeIsSIMD(dstType));
-    assert(!varTypeIsFloating(dstType));
-    return INS_mov;
+    if (dstIsFloatReg)
+    {
+        return (dstType == TYP_DOUBLE) ? INS_vmov_i2d : INS_vmov_i2f;
+    }
+    else
+    {
+        return (dstType == TYP_LONG) ? INS_vmov_d2i : INS_vmov_f2i;
+    }
 #else // TARGET*
 #error "Unknown TARGET"
 #endif
@@ -2255,7 +2307,24 @@ instruction CodeGen::ins_FloatConv(var_types to, var_types from)
     }
 }
 
-#endif // #elif defined(TARGET_ARM)
+#elif defined(TARGET_ARM64)
+instruction CodeGen::ins_CopyIntToFloat(var_types srcType, var_types dstType)
+{
+    assert((dstType == TYP_FLOAT) || (dstType == TYP_DOUBLE));
+    assert((srcType == TYP_INT) || (srcType == TYP_UINT) || (srcType == TYP_LONG) || (srcType == TYP_ULONG));
+
+    return INS_mov;
+}
+
+instruction CodeGen::ins_CopyFloatToInt(var_types srcType, var_types dstType)
+{
+    assert((srcType == TYP_FLOAT) || (srcType == TYP_DOUBLE));
+    assert((dstType == TYP_INT) || (dstType == TYP_UINT) || (dstType == TYP_LONG) || (dstType == TYP_ULONG));
+
+    return INS_mov;
+}
+
+#endif // TARGET_ARM64
 
 /*****************************************************************************
  *
@@ -2295,11 +2364,7 @@ void CodeGen::instGen_Return(unsigned stkArgSize)
  *     Note: all MemoryBarriers instructions can be removed by
  *           SET COMPlus_JitNoMemoryBarriers=1
  */
-#ifdef TARGET_ARM64
-void CodeGen::instGen_MemoryBarrier(insBarrier barrierType)
-#else
-void CodeGen::instGen_MemoryBarrier()
-#endif
+void CodeGen::instGen_MemoryBarrier(BarrierKind barrierKind)
 {
 #ifdef DEBUG
     if (JitConfig.JitNoMemoryBarriers() == 1)
@@ -2309,12 +2374,19 @@ void CodeGen::instGen_MemoryBarrier()
 #endif // DEBUG
 
 #if defined(TARGET_XARCH)
+    // only full barrier needs to be emitted on Xarch
+    if (barrierKind != BARRIER_FULL)
+    {
+        return;
+    }
+
     instGen(INS_lock);
     GetEmitter()->emitIns_I_AR(INS_or, EA_4BYTE, 0, REG_SPBASE, 0);
 #elif defined(TARGET_ARM)
+    // ARM has only full barriers, so all barriers need to be emitted as full.
     GetEmitter()->emitIns_I(INS_dmb, EA_4BYTE, 0xf);
 #elif defined(TARGET_ARM64)
-    GetEmitter()->emitIns_BARR(INS_dmb, barrierType);
+    GetEmitter()->emitIns_BARR(INS_dmb, barrierKind == BARRIER_LOAD_ONLY ? INS_BARRIER_ISHLD : INS_BARRIER_ISH);
 #else
 #error "Unknown TARGET"
 #endif

@@ -13,8 +13,92 @@ namespace System.Threading.Tests
     public class InterlockedTests
     {
         [Fact]
-        public void IncrementDecrement_int()
+        public void InterlockedAdd_Int32()
         {
+            int value = 42;
+            Assert.Equal(12387, Interlocked.Add(ref value, 12345));
+            Assert.Equal(12387, Interlocked.Add(ref value, 0));
+            Assert.Equal(12386, Interlocked.Add(ref value, -1));
+
+            value = int.MaxValue;
+            Assert.Equal(int.MinValue, Interlocked.Add(ref value, 1));
+        }
+
+        [Fact]
+        public void InterlockedAdd_UInt32()
+        {
+            uint value = 42;
+            Assert.Equal(12387u, Interlocked.Add(ref value, 12345u));
+            Assert.Equal(12387u, Interlocked.Add(ref value, 0u));
+            Assert.Equal(9386u, Interlocked.Add(ref value, 4294964295u));
+
+            value = uint.MaxValue;
+            Assert.Equal(0u, Interlocked.Add(ref value, 1));
+        }
+
+        [Fact]
+        public void InterlockedAdd_Int64()
+        {
+            long value = 42;
+            Assert.Equal(12387, Interlocked.Add(ref value, 12345));
+            Assert.Equal(12387, Interlocked.Add(ref value, 0));
+            Assert.Equal(12386, Interlocked.Add(ref value, -1));
+
+            value = long.MaxValue;
+            Assert.Equal(long.MinValue, Interlocked.Add(ref value, 1));
+        }
+
+        [Fact]
+        public void InterlockedAdd_UInt64()
+        {
+            ulong value = 42;
+            Assert.Equal(12387u, Interlocked.Add(ref value, 12345));
+            Assert.Equal(12387u, Interlocked.Add(ref value, 0));
+            Assert.Equal(10771u, Interlocked.Add(ref value, 18446744073709550000));
+
+            value = ulong.MaxValue;
+            Assert.Equal(0u, Interlocked.Add(ref value, 1));
+        }
+
+        [Fact]
+        public void InterlockedIncrement_Int32()
+        {
+            int value = 42;
+            Assert.Equal(43, Interlocked.Increment(ref value));
+            Assert.Equal(43, value);
+        }
+
+        [Fact]
+        public void InterlockedIncrement_UInt32()
+        {
+            uint value = 42u;
+            Assert.Equal(43u, Interlocked.Increment(ref value));
+            Assert.Equal(43u, value);
+        }
+
+        [Fact]
+        public void InterlockedIncrement_Int64()
+        {
+            long value = 42;
+            Assert.Equal(43, Interlocked.Increment(ref value));
+            Assert.Equal(43, value);
+        }
+
+        [Fact]
+        public void InterlockedIncrement_UInt64()
+        {
+            ulong value = 42u;
+            Assert.Equal(43u, Interlocked.Increment(ref value));
+            Assert.Equal(43u, value);
+        }
+
+        [Fact]
+        public void InterlockedDecrement_Int32()
+        {
+            int value = 42;
+            Assert.Equal(41, Interlocked.Decrement(ref value));
+            Assert.Equal(41, value);
+
             List<Task> threads = new List<Task>();
             int count = 0;
             for (int i = 0; i < 10000; i++)
@@ -27,8 +111,20 @@ namespace System.Threading.Tests
         }
 
         [Fact]
-        public void IncrementDecrement_long()
+        public void InterlockedDecrement_UInt32()
         {
+            uint value = 42u;
+            Assert.Equal(41u, Interlocked.Decrement(ref value));
+            Assert.Equal(41u, value);
+        }
+
+        [Fact]
+        public void InterlockedDecrement_Int64()
+        {
+            long value = 42;
+            Assert.Equal(41, Interlocked.Decrement(ref value));
+            Assert.Equal(41, value);
+
             List<Task> threads = new List<Task>();
             long count = 0;
             for (int i = 0; i < 10000; i++)
@@ -40,7 +136,173 @@ namespace System.Threading.Tests
             Assert.Equal(0, count);
         }
 
-        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsNotArm64Process))] // [ActiveIssue("https://github.com/dotnet/coreclr/issues/20215")]
+        [Fact]
+        public void InterlockedDecrement_UInt64()
+        {
+            ulong value = 42u;
+            Assert.Equal(41u, Interlocked.Decrement(ref value));
+            Assert.Equal(41u, value);
+        }
+
+        [Fact]
+        public void InterlockedExchange_Int32()
+        {
+            int value = 42;
+            Assert.Equal(42, Interlocked.Exchange(ref value, 12345));
+            Assert.Equal(12345, value);
+        }
+
+        [Fact]
+        public void InterlockedExchange_UInt32()
+        {
+            uint value = 42;
+            Assert.Equal(42u, Interlocked.Exchange(ref value, 12345u));
+            Assert.Equal(12345u, value);
+        }
+
+        [Fact]
+        public void InterlockedExchange_Int64()
+        {
+            long value = 42;
+            Assert.Equal(42, Interlocked.Exchange(ref value, 12345));
+            Assert.Equal(12345, value);
+        }
+
+        [Fact]
+        public void InterlockedExchange_UInt64()
+        {
+            ulong value = 42;
+            Assert.Equal(42u, Interlocked.Exchange(ref value, 12345u));
+            Assert.Equal(12345u, value);
+        }
+
+        [Fact]
+        public void InterlockedCompareExchange_Int32()
+        {
+            int value = 42;
+
+            Assert.Equal(42, Interlocked.CompareExchange(ref value, 12345, 41));
+            Assert.Equal(42, value);
+
+            Assert.Equal(42, Interlocked.CompareExchange(ref value, 12345, 42));
+            Assert.Equal(12345, value);
+        }
+
+        [Fact]
+        public void InterlockedCompareExchange_UInt32()
+        {
+            uint value = 42;
+
+            Assert.Equal(42u, Interlocked.CompareExchange(ref value, 12345u, 41u));
+            Assert.Equal(42u, value);
+
+            Assert.Equal(42u, Interlocked.CompareExchange(ref value, 12345u, 42u));
+            Assert.Equal(12345u, value);
+        }
+
+        [Fact]
+        public void InterlockedCompareExchange_Int64()
+        {
+            long value = 42;
+
+            Assert.Equal(42, Interlocked.CompareExchange(ref value, 12345, 41));
+            Assert.Equal(42, value);
+
+            Assert.Equal(42, Interlocked.CompareExchange(ref value, 12345, 42));
+            Assert.Equal(12345, value);
+        }
+
+        [Fact]
+        public void InterlockedCompareExchange_UInt64()
+        {
+            ulong value = 42;
+
+            Assert.Equal(42u, Interlocked.CompareExchange(ref value, 12345u, 41u));
+            Assert.Equal(42u, value);
+
+            Assert.Equal(42u, Interlocked.CompareExchange(ref value, 12345u, 42u));
+            Assert.Equal(12345u, value);
+        }
+
+        [Fact]
+        public void InterlockedRead_Int64()
+        {
+            long value = long.MaxValue - 42;
+            Assert.Equal(long.MaxValue - 42, Interlocked.Read(ref value));
+        }
+
+        [Fact]
+        public void InterlockedRead_UInt64()
+        {
+            ulong value = ulong.MaxValue - 42;
+            Assert.Equal(ulong.MaxValue - 42, Interlocked.Read(ref value));
+        }
+
+        [Fact]
+        public void InterlockedAnd_Int32()
+        {
+            int value = 0x12345670;
+            Assert.Equal(0x12345670, Interlocked.And(ref value, 0x7654321));
+            Assert.Equal(0x02244220, value);
+        }
+
+        [Fact]
+        public void InterlockedAnd_UInt32()
+        {
+            uint value = 0x12345670u;
+            Assert.Equal(0x12345670u, Interlocked.And(ref value, 0x7654321));
+            Assert.Equal(0x02244220u, value);
+        }
+
+        [Fact]
+        public void InterlockedAnd_Int64()
+        {
+            long value = 0x12345670;
+            Assert.Equal(0x12345670, Interlocked.And(ref value, 0x7654321));
+            Assert.Equal(0x02244220, value);
+        }
+
+        [Fact]
+        public void InterlockedAnd_UInt64()
+        {
+            ulong value = 0x12345670u;
+            Assert.Equal(0x12345670u, Interlocked.And(ref value, 0x7654321));
+            Assert.Equal(0x02244220u, value);
+        }
+
+        [Fact]
+        public void InterlockedOr_Int32()
+        {
+            int value = 0x12345670;
+            Assert.Equal(0x12345670, Interlocked.Or(ref value, 0x7654321));
+            Assert.Equal(0x17755771, value);
+        }
+
+        [Fact]
+        public void InterlockedOr_UInt32()
+        {
+            uint value = 0x12345670u;
+            Assert.Equal(0x12345670u, Interlocked.Or(ref value, 0x7654321));
+            Assert.Equal(0x17755771u, value);
+        }
+
+        [Fact]
+        public void InterlockedOr_Int64()
+        {
+            long value = 0x12345670;
+            Assert.Equal(0x12345670, Interlocked.Or(ref value, 0x7654321));
+            Assert.Equal(0x17755771, value);
+        }
+
+        [Fact]
+        public void InterlockedOr_UInt64()
+        {
+            ulong value = 0x12345670u;
+            Assert.Equal(0x12345670u, Interlocked.Or(ref value, 0x7654321));
+            Assert.Equal(0x17755771u, value);
+        }
+
+        [Fact]
         public void MemoryBarrierProcessWide()
         {
             // Stress MemoryBarrierProcessWide correctness using a simple AsymmetricLock
@@ -96,8 +358,6 @@ namespace System.Threading.Tests
 
             // Returning LockCookie to call Exit on is the fastest implementation because of it works naturally with the RCU pattern.
             // The traditional Enter/Exit lock interface would require thread local storage or some other scheme to reclaim the cookie.
-            // Returning LockCookie to call Exit on is the fastest implementation because of it works naturally with the RCU pattern.
-            // The traditional Enter/Exit lock interface would require thread local storage or some other scheme to reclaim the cookie.
             public LockCookie Enter()
             {
                 int currentThreadId = Environment.CurrentManagedThreadId;
@@ -118,6 +378,7 @@ namespace System.Threading.Tests
                     //
                     if (VolatileReadWithoutBarrier(ref _current) == entry)
                     {
+                        // at this point we know for sure that we own the lock.
                         return entry;
                     }
 
@@ -136,8 +397,13 @@ namespace System.Threading.Tests
                     var oldEntry = _current;
                     _current = new LockCookie(Environment.CurrentManagedThreadId);
 
-                    // After MemoryBarrierProcessWide, we can be sure that the Volatile.Read done by the fast thread will see that it is not a fast
-                    // thread anymore, and thus it will not attempt to enter the lock.
+                    // MemoryBarrierProcessWide ensures, process-wide, that our write to _current becomes visible
+                    // to every thread, and all writes by other threads become visible to us before we can continue.
+                    // As a result any other thread that sets Taken to true either:
+                    //    a) made it past the read of _current and owns the lock OR
+                    //    b) will see that _current has changed and will revert Taken without taking the lock
+                    // Thus we only need to wait for 'Taken' to become false and claim the lock for ourselves.
+                    // 'Taken' may yet switch to true after that, but that cannot result in other thread owning the lock.
                     Interlocked.MemoryBarrierProcessWide();
 
                     // Keep looping as long as the lock is taken by other thread

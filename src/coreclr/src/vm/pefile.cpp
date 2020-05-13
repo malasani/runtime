@@ -11,9 +11,7 @@
 #include "common.h"
 #include "pefile.h"
 #include "eecontract.h"
-#include "apithreadstress.h"
 #include "eeconfig.h"
-#include "product_version.h"
 #include "eventtrace.h"
 #include "dbginterface.h"
 #include "peimagelayout.inl"
@@ -1123,10 +1121,10 @@ BOOL RuntimeVerifyNativeImageVersion(const CORCOMPILE_VERSION_INFO *info, PEAsse
     // Check that the EE version numbers are the same.
     //
 
-    if (info->wVersionMajor != CLR_MAJOR_VERSION
-        || info->wVersionMinor != CLR_MINOR_VERSION
-        || info->wVersionBuildNumber != CLR_BUILD_VERSION
-        || info->wVersionPrivateBuildNumber != CLR_BUILD_VERSION_QFE)
+    if (info->wVersionMajor != RuntimeFileMajorVersion
+        || info->wVersionMinor != RuntimeFileMinorVersion
+        || info->wVersionBuildNumber != RuntimeFileBuildVersion
+        || info->wVersionPrivateBuildNumber != RuntimeFileRevisionVersion)
     {
         RuntimeVerifyLog(LL_ERROR, pLogAsm, W("CLR version recorded in native image doesn't match the current CLR."));
         return FALSE;
@@ -2448,7 +2446,6 @@ PTR_ICLRPrivBinder PEFile::GetBindingContext()
 
     // CoreLibrary is always bound in context of the TPA Binder. However, since it gets loaded and published
     // during EEStartup *before* DefaultContext Binder (aka TPAbinder) is initialized, we dont have a binding context to publish against.
-    // Thus, we will always return NULL for its binding context.
     if (!IsSystem())
     {
         pBindingContext = dac_cast<PTR_ICLRPrivBinder>(GetHostAssembly());
@@ -2466,3 +2463,31 @@ PTR_ICLRPrivBinder PEFile::GetBindingContext()
 
     return pBindingContext;
 }
+
+#ifndef DACCESS_COMPILE
+AssemblyLoadContext* PEFile::GetAssemblyLoadContext()
+{
+    LIMITED_METHOD_CONTRACT;
+
+    PTR_ICLRPrivBinder pBindingContext = GetBindingContext();
+    ICLRPrivBinder* pOpaqueBinder = NULL;
+
+    if (pBindingContext != NULL)
+    {
+        UINT_PTR assemblyBinderID = 0;
+        IfFailThrow(pBindingContext->GetBinderID(&assemblyBinderID));
+
+        pOpaqueBinder = reinterpret_cast<ICLRPrivBinder*>(assemblyBinderID);
+
+#ifdef FEATURE_COMINTEROP
+        // Treat WinRT assemblies (bound using the WinRT binder) as if they were loaded into the TPA ALC
+        if (AreSameBinderInstance(AppDomain::GetCurrentDomain()->GetWinRtBinder(), pOpaqueBinder))
+        {
+            pOpaqueBinder = NULL;
+        }
+#endif
+    }
+
+    return (pOpaqueBinder != NULL) ? (AssemblyLoadContext*)pOpaqueBinder : AppDomain::GetCurrentDomain()->GetTPABinderContext();
+}
+#endif

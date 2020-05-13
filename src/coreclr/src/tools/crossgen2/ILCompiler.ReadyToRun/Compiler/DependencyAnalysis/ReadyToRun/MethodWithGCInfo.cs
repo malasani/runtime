@@ -12,29 +12,27 @@ using Internal.TypeSystem;
 
 namespace ILCompiler.DependencyAnalysis.ReadyToRun
 {
-    public class MethodWithGCInfo : ObjectNode, IReadyToRunMethodCodeNode, IMethodBodyNode
+    public class MethodWithGCInfo : ObjectNode, IMethodBodyNode, ISymbolDefinitionNode
     {
         public readonly MethodGCInfoNode GCInfoNode;
 
         private readonly MethodDesc _method;
-        public SignatureContext SignatureContext { get; }
 
         private ObjectData _methodCode;
         private FrameInfo[] _frameInfos;
         private byte[] _gcInfo;
         private ObjectData _ehInfo;
-        private OffsetMapping[] _debugLocInfos;
-        private NativeVarInfo[] _debugVarInfos;
+        private byte[] _debugLocInfos;
+        private byte[] _debugVarInfos;
         private DebugEHClauseInfo[] _debugEHClauseInfos;
         private List<ISymbolNode> _fixups;
         private MethodDesc[] _inlinedMethods;
 
-        public MethodWithGCInfo(MethodDesc methodDesc, SignatureContext signatureContext)
+        public MethodWithGCInfo(MethodDesc methodDesc)
         {
             GCInfoNode = new MethodGCInfoNode(this);
             _fixups = new List<ISymbolNode>();
             _method = methodDesc;
-            SignatureContext = signatureContext;
         }
 
         public void SetCode(ObjectData data)
@@ -126,7 +124,7 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
                 return null;
             }
 
-            fixupCells.Sort(FixupCell.Comparer);
+            fixupCells.MergeSortAllowDuplicates(FixupCell.Comparer);
 
             // Deduplicate fixupCells
             int j = 0;
@@ -270,20 +268,24 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
             _ehInfo = ehInfo;
         }
 
-        public OffsetMapping[] DebugLocInfos => _debugLocInfos;
-        public NativeVarInfo[] DebugVarInfos => _debugVarInfos;
+        public byte[] DebugLocInfos => _debugLocInfos;
+        public byte[] DebugVarInfos => _debugVarInfos;
         public DebugEHClauseInfo[] DebugEHClauseInfos => _debugEHClauseInfos;
 
         public void InitializeDebugLocInfos(OffsetMapping[] debugLocInfos)
         {
             Debug.Assert(_debugLocInfos == null);
-            _debugLocInfos = debugLocInfos;
+            // Process the debug info from JIT format to R2R format immediately as it is large
+            // and not used in the rest of the process except to emit.
+            _debugLocInfos = DebugInfoTableNode.CreateBoundsBlobForMethod(debugLocInfos);
         }
 
         public void InitializeDebugVarInfos(NativeVarInfo[] debugVarInfos)
         {
             Debug.Assert(_debugVarInfos == null);
-            _debugVarInfos = debugVarInfos;
+            // Process the debug info from JIT format to R2R format immediately as it is large
+            // and not used in the rest of the process except to emit.
+            _debugVarInfos = DebugInfoTableNode.CreateVarBlobForMethod(debugVarInfos);
         }
 
         public void InitializeDebugEHClauseInfos(DebugEHClauseInfo[] debugEHClauseInfos)
@@ -294,11 +296,7 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
         public override int CompareToImpl(ISortableNode other, CompilerComparer comparer)
         {
             MethodWithGCInfo otherNode = (MethodWithGCInfo)other;
-            int result = comparer.Compare(_method, otherNode._method);
-            if (result != 0)
-                return result;
-
-            return SignatureContext.CompareTo(otherNode.SignatureContext, comparer);
+            return comparer.Compare(_method, otherNode._method);
         }
 
         public void InitializeInliningInfo(MethodDesc[] inlinedMethods)
@@ -309,5 +307,6 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
 
         public int Offset => 0;
         public override bool IsShareable => throw new NotImplementedException();
+        public override bool ShouldSkipEmittingObjectNode(NodeFactory factory) => IsEmpty;
     }
 }

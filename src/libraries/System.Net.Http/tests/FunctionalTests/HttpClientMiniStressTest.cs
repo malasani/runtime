@@ -4,6 +4,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Quic;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.Test.Common;
@@ -20,6 +21,7 @@ namespace System.Net.Http.Functional.Tests
         public SocketsHttpHandler_HttpClientMiniStress_NoVersion(ITestOutputHelper output) : base(output) { }
 
         [ConditionalTheory(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         [InlineData(1000000)]
         public void CreateAndDestroyManyClients(int numClients)
         {
@@ -30,8 +32,8 @@ namespace System.Net.Http.Functional.Tests
         }
     }
 
-    // TODO: public to test HTTP/3.
-    internal sealed class SocketsHttpHandler_HttpClientMiniStress_Http3 : HttpClientMiniStress
+    [ConditionalClass(typeof(QuicConnection), nameof(QuicConnection.IsQuicSupported))]
+    public sealed class SocketsHttpHandler_HttpClientMiniStress_Http3 : HttpClientMiniStress
     {
         public SocketsHttpHandler_HttpClientMiniStress_Http3(ITestOutputHelper output) : base(output) { }
         protected override Version UseVersion => HttpVersion.Version30;
@@ -48,6 +50,7 @@ namespace System.Net.Http.Functional.Tests
         public SocketsHttpHandler_HttpClientMiniStress_Http11(ITestOutputHelper output) : base(output) { }
 
         [ConditionalTheory(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         [MemberData(nameof(PostStressOptions))]
         public async Task ManyClients_ManyPosts_Async(int numRequests, int dop, int numBytes)
         {
@@ -85,6 +88,7 @@ namespace System.Net.Http.Functional.Tests
         }
     }
 
+    [Collection(nameof(HttpClientMiniStress))]
     public abstract class HttpClientMiniStress : HttpClientHandlerTestBase
     {
         public HttpClientMiniStress(ITestOutputHelper output) : base(output) { }
@@ -100,6 +104,7 @@ namespace System.Net.Http.Functional.Tests
                 });
 
         [ConditionalTheory(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         [MemberData(nameof(GetStressOptions))]
         public void SingleClient_ManyGets_Sync(int numRequests, int dop, HttpCompletionOption completionOption)
         {
@@ -114,6 +119,7 @@ namespace System.Net.Http.Functional.Tests
         }
 
         [ConditionalTheory(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         [MemberData(nameof(GetStressOptions))]
         public async Task SingleClient_ManyGets_Async(int numRequests, int dop, HttpCompletionOption completionOption)
         {
@@ -125,6 +131,7 @@ namespace System.Net.Http.Functional.Tests
         }
 
         [ConditionalTheory(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         [MemberData(nameof(GetStressOptions))]
         public void ManyClients_ManyGets(int numRequests, int dop, HttpCompletionOption completionOption)
         {
@@ -139,6 +146,7 @@ namespace System.Net.Http.Functional.Tests
         }
 
         [ConditionalTheory(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         [InlineData(5000)]
         public async Task MakeAndFaultManyRequests(int numRequests)
         {
@@ -215,6 +223,7 @@ namespace System.Net.Http.Functional.Tests
         }
 
         [ConditionalFact(typeof(TestEnvironment), nameof(TestEnvironment.IsStressModeEnabled))]
+        [OuterLoop]
         public async Task UnreadResponseMessage_Collectible()
         {
             await LoopbackServerFactory.CreateServerAsync(async (server, url) =>

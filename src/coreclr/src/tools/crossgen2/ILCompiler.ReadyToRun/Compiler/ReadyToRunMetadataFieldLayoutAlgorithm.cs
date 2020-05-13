@@ -27,7 +27,7 @@ namespace ILCompiler
         /// <summary>
         /// Compilation module group is used to identify which types extend beyond the current version bubble.
         /// </summary>
-        private CompilationModuleGroup _compilationGroup;
+        private ReadyToRunCompilationModuleGroupBase _compilationGroup;
 
         public ReadyToRunMetadataFieldLayoutAlgorithm()
         {
@@ -38,7 +38,7 @@ namespace ILCompiler
         /// Set up compilation group needed for proper calculation of base class alignment in auto layout.
         /// </summary>
         /// <param name="compilationGroup"></param>
-        public void SetCompilationGroup(CompilationModuleGroup compilationGroup)
+        public void SetCompilationGroup(ReadyToRunCompilationModuleGroupBase compilationGroup)
         {
             _compilationGroup = compilationGroup;
         }
@@ -810,7 +810,7 @@ namespace ILCompiler
         /// This method decides whether the type needs aligned base offset in order to have layout resilient to 
         /// base class layout changes.
         /// </summary>
-        protected override void AlignBaseOffsetIfNecessary(MetadataType type, ref LayoutInt baseOffset)
+        protected override void AlignBaseOffsetIfNecessary(MetadataType type, ref LayoutInt baseOffset, bool requiresAlign8)
         {
             if (type.IsValueType)
             {
@@ -822,22 +822,15 @@ namespace ILCompiler
                 return;
             }
 
-            if (_compilationGroup.ContainsType(baseType))
+            if (!_compilationGroup.NeedsAlignmentBetweenBaseTypeAndDerived(baseType: (MetadataType)baseType, derivedType: type))
             {
-                if (_compilationGroup.ContainsTypeLayout(baseType))
-                {
-                    // The type is defined in the module that's currently being compiled and the type layout doesn't depend on other modules
-                    return;
-                }
-            }
-            else if (_compilationGroup.VersionsWithType(baseType))
-            {
-                // The baseType is in the current version bubble, but in a module different from the one that's currently being compiled
+                // The type is defined in the module that's currently being compiled and the type layout doesn't depend on other modules
                 return;
             }
 
             LayoutInt alignment = new LayoutInt(type.Context.Target.PointerSize);
-            if (type.RequiresAlign8())
+
+            if (requiresAlign8)
             {
                 alignment = new LayoutInt(8);
             }

@@ -113,37 +113,15 @@ typedef struct DECLSPEC_ALIGN(8) _T_CONTEXT {
 // each frame function.
 //
 
-#ifndef TARGET_UNIX
-#ifdef HOST_X86
-typedef struct _RUNTIME_FUNCTION {
+#if defined(HOST_WINDOWS)
+typedef struct _T_RUNTIME_FUNCTION {
     DWORD BeginAddress;
     DWORD UnwindData;
-} RUNTIME_FUNCTION, *PRUNTIME_FUNCTION;
-
-//
-// Define unwind history table structure.
-//
-
-#define UNWIND_HISTORY_TABLE_SIZE 12
-
-typedef struct _UNWIND_HISTORY_TABLE_ENTRY {
-    DWORD ImageBase;
-    PRUNTIME_FUNCTION FunctionEntry;
-} UNWIND_HISTORY_TABLE_ENTRY, *PUNWIND_HISTORY_TABLE_ENTRY;
-
-typedef struct _UNWIND_HISTORY_TABLE {
-    DWORD Count;
-    BYTE  LocalHint;
-    BYTE  GlobalHint;
-    BYTE  Search;
-    BYTE  Once;
-    DWORD LowAddress;
-    DWORD HighAddress;
-    UNWIND_HISTORY_TABLE_ENTRY Entry[UNWIND_HISTORY_TABLE_SIZE];
-} UNWIND_HISTORY_TABLE, *PUNWIND_HISTORY_TABLE;
-#endif // HOST_X86
-#endif // !TARGET_UNIX
-
+} T_RUNTIME_FUNCTION, *PT_RUNTIME_FUNCTION;
+#else // HOST_WINDOWS
+#define T_RUNTIME_FUNCTION RUNTIME_FUNCTION
+#define PT_RUNTIME_FUNCTION PRUNTIME_FUNCTION
+#endif // HOST_WINDOWS
 
 //
 // Nonvolatile context pointer record.
@@ -177,7 +155,7 @@ typedef struct _T_KNONVOLATILE_CONTEXT_POINTERS {
 //
 
 typedef
-PRUNTIME_FUNCTION
+PT_RUNTIME_FUNCTION
 (*PGET_RUNTIME_FUNCTION_CALLBACK) (
     IN DWORD64 ControlPc,
     IN PVOID Context
@@ -186,27 +164,18 @@ PRUNTIME_FUNCTION
 typedef struct _T_DISPATCHER_CONTEXT {
     ULONG ControlPc;
     ULONG ImageBase;
-    PRUNTIME_FUNCTION FunctionEntry;
+    PT_RUNTIME_FUNCTION FunctionEntry;
     ULONG EstablisherFrame;
     ULONG TargetPc;
     PT_CONTEXT ContextRecord;
     PEXCEPTION_ROUTINE LanguageHandler;
     PVOID HandlerData;
-    PUNWIND_HISTORY_TABLE HistoryTable;
+    PVOID HistoryTable;
     ULONG ScopeIndex;
     BOOLEAN ControlPcIsUnwound;
     PUCHAR NonVolatileRegisters;
 } T_DISPATCHER_CONTEXT, *PT_DISPATCHER_CONTEXT;
 
-#if defined(TARGET_UNIX) || defined(HOST_X86)
-#define T_RUNTIME_FUNCTION RUNTIME_FUNCTION
-#define PT_RUNTIME_FUNCTION PRUNTIME_FUNCTION
-#else
-typedef struct _T_RUNTIME_FUNCTION {
-    DWORD BeginAddress;
-    DWORD UnwindData;
-} T_RUNTIME_FUNCTION, *PT_RUNTIME_FUNCTION;
-#endif
 
 #elif defined(HOST_AMD64) && defined(TARGET_ARM64)  // Host amd64 managing ARM64 related code
 
@@ -339,7 +308,7 @@ typedef struct _T_DISPATCHER_CONTEXT {
     PCONTEXT ContextRecord;
     PEXCEPTION_ROUTINE LanguageHandler;
     PVOID HandlerData;
-    PUNWIND_HISTORY_TABLE HistoryTable;
+    PVOID HistoryTable;
     DWORD ScopeIndex;
     BOOLEAN ControlPcIsUnwound;
     PBYTE  NonVolatileRegisters;
@@ -393,7 +362,7 @@ typedef struct _T_KNONVOLATILE_CONTEXT_POINTERS {
 
 #endif
 
-#if defined(DAC_COMPILE) && defined(TARGET_UNIX)
+#if defined(DACCESS_COMPILE) && defined(TARGET_UNIX)
 // This is a TARGET oriented copy of CRITICAL_SECTION and PAL_CS_NATIVE_DATA_SIZE
 // It is configured based on TARGET configuration rather than HOST configuration
 // There is validation code in src/coreclr/src/vm/crst.cpp to keep these from
@@ -401,9 +370,9 @@ typedef struct _T_KNONVOLATILE_CONTEXT_POINTERS {
 
 #define T_CRITICAL_SECTION_VALIDATION_MESSAGE "T_CRITICAL_SECTION validation failed. It is not in sync with CRITICAL_SECTION"
 
-#if defined(TARGET_DARWIN) && defined(TARGET_X86)
+#if defined(TARGET_OSX) && defined(TARGET_X86)
 #define DAC_CS_NATIVE_DATA_SIZE 76
-#elif defined(TARGET_DARWIN) && defined(TARGET_AMD64)
+#elif defined(TARGET_OSX) && defined(TARGET_AMD64)
 #define DAC_CS_NATIVE_DATA_SIZE 120
 #elif defined(TARGET_FREEBSD) && defined(TARGET_X86)
 #define DAC_CS_NATIVE_DATA_SIZE 12
@@ -423,9 +392,11 @@ typedef struct _T_KNONVOLATILE_CONTEXT_POINTERS {
 #define DAC_CS_NATIVE_DATA_SIZE 56
 #elif defined(TARGET_NETBSD) && defined(TARGET_X86)
 #define DAC_CS_NATIVE_DATA_SIZE 56
+#elif defined(__sun) && defined(TARGET_AMD64)
+#define DAC_CS_NATIVE_DATA_SIZE 48
 #else
 #warning
-#error  DAC_CS_NATIVE_DATA_SIZE is not defined for this architecture
+#error  DAC_CS_NATIVE_DATA_SIZE is not defined for this architecture. This should be same value as PAL_CS_NATIVE_DATA_SIZE (aka sizeof(PAL_CS_NATIVE_DATA)).
 #endif
 
 struct T_CRITICAL_SECTION {

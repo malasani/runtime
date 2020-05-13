@@ -45,6 +45,33 @@ namespace System.Net.Http.Functional.Tests
             });
         }
 
+        [Fact]
+        public async Task SendAsync_DefaultHeaders_CorrectlyWritten()
+        {
+            const string Version = "2017-04-17";
+            const string Blob = "BlockBlob";
+
+            await LoopbackServerFactory.CreateClientAndServerAsync(async uri =>
+            {
+                using (HttpClient client = CreateHttpClient())
+                {
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("x-ms-version", Version);
+                    client.DefaultRequestHeaders.Add("x-ms-blob-type", Blob);
+                    var message = new HttpRequestMessage(HttpMethod.Get, uri) { Version = UseVersion };
+                    (await client.SendAsync(message).ConfigureAwait(false)).Dispose();
+                }
+            },
+            async server =>
+            {
+                HttpRequestData requestData = await server.HandleRequestAsync(HttpStatusCode.OK);
+
+                string headerValue = requestData.GetSingleHeaderValue("x-ms-blob-type");
+                Assert.Equal(Blob, headerValue);
+                headerValue = requestData.GetSingleHeaderValue("x-ms-version");
+                Assert.Equal(Version, Version);
+            });
+        }
+
         [Theory]
         [InlineData("\u05D1\u05F1")]
         [InlineData("jp\u30A5")]
@@ -273,10 +300,10 @@ namespace System.Net.Http.Functional.Tests
         [Fact]
         public async Task SendAsync_GetWithInvalidHostHeader_ThrowsException()
         {
-            if (LoopbackServerFactory.IsHttp2)
+            if (LoopbackServerFactory.Version >= HttpVersion.Version20)
             {
                 // Only SocketsHttpHandler with HTTP/1.x uses the Host header to influence the SSL auth.
-                // Host header is not used for HTTP2.
+                // Host header is not used for HTTP2 and later.
                 return;
             }
 

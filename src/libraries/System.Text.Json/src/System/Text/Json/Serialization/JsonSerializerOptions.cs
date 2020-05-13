@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json.Serialization;
 using System.Text.Encodings.Web;
-using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 
 namespace System.Text.Json
 {
@@ -20,13 +20,16 @@ namespace System.Text.Json
         internal static readonly JsonSerializerOptions s_defaultOptions = new JsonSerializerOptions();
 
         private readonly ConcurrentDictionary<Type, JsonClassInfo> _classes = new ConcurrentDictionary<Type, JsonClassInfo>();
-        private static readonly ConcurrentDictionary<string, ImmutableCollectionCreator> s_createRangeDelegates = new ConcurrentDictionary<string, ImmutableCollectionCreator>();
+
+        // For any new option added, adding it to the options copied in the copy constructor below must be considered.
+
         private MemberAccessor? _memberAccessorStrategy;
         private JsonNamingPolicy? _dictionaryKeyPolicy;
         private JsonNamingPolicy? _jsonPropertyNamingPolicy;
         private JsonCommentHandling _readCommentHandling;
         private ReferenceHandling _referenceHandling = ReferenceHandling.Default;
-        private JavaScriptEncoder? _encoder;
+        private JavaScriptEncoder? _encoder = null;
+
         private int _defaultBufferSize = BufferSizeDefault;
         private int _maxDepth;
         private bool _allowTrailingCommas;
@@ -42,6 +45,61 @@ namespace System.Text.Json
         public JsonSerializerOptions()
         {
             Converters = new ConverterList(this);
+        }
+
+        /// <summary>
+        /// Copies the options from a <see cref="JsonSerializerOptions"/> instance to a new instance.
+        /// </summary>
+        /// <param name="options">The <see cref="JsonSerializerOptions"/> instance to copy options from.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// <paramref name="options"/> is <see langword="null"/>.
+        /// </exception>
+        public JsonSerializerOptions(JsonSerializerOptions options)
+        {
+            if (options == null)
+            {
+                throw new ArgumentNullException(nameof(options));
+            }
+
+            _memberAccessorStrategy = options.MemberAccessorStrategy;
+            _dictionaryKeyPolicy = options._dictionaryKeyPolicy;
+            _jsonPropertyNamingPolicy = options._jsonPropertyNamingPolicy;
+            _readCommentHandling = options._readCommentHandling;
+            _referenceHandling = options._referenceHandling;
+            _encoder = options._encoder;
+
+            _defaultBufferSize = options._defaultBufferSize;
+            _maxDepth = options._maxDepth;
+            _allowTrailingCommas = options._allowTrailingCommas;
+            _ignoreNullValues = options._ignoreNullValues;
+            _ignoreReadOnlyProperties = options._ignoreReadOnlyProperties;
+            _propertyNameCaseInsensitive = options._propertyNameCaseInsensitive;
+            _writeIndented = options._writeIndented;
+
+            Converters = new ConverterList(this, (ConverterList)options.Converters);
+            EffectiveMaxDepth = options.EffectiveMaxDepth;
+
+            // _classes is not copied as sharing the JsonClassInfo and JsonPropertyInfo caches can result in
+            // unnecessary references to type metadata, potentially hindering garbage collection on the source options.
+
+            // _haveTypesBeenCreated is not copied; it's okay to make changes to this options instance as (de)serialization has not occurred.
+        }
+
+        /// <summary>
+        /// Constructs a new <see cref="JsonSerializerOptions"/> instance with a predefined set of options determined by the specified <see cref="JsonSerializerDefaults"/>.
+        /// </summary>
+        /// <param name="defaults"> The <see cref="JsonSerializerDefaults"/> to reason about.</param>
+        public JsonSerializerOptions(JsonSerializerDefaults defaults) : this()
+        {
+            if (defaults == JsonSerializerDefaults.Web)
+            {
+                _propertyNameCaseInsensitive = true;
+                _jsonPropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            }
+            else if (defaults != JsonSerializerDefaults.General)
+            {
+                throw new ArgumentOutOfRangeException(nameof(defaults));
+            }
         }
 
         /// <summary>
@@ -307,6 +365,7 @@ namespace System.Text.Json
             set
             {
                 VerifyMutable();
+
                 _referenceHandling = value ?? throw new ArgumentNullException(nameof(value));
             }
         }
@@ -317,10 +376,9 @@ namespace System.Text.Json
             {
                 if (_memberAccessorStrategy == null)
                 {
-#if BUILDING_INBOX_LIBRARY
+#if NETFRAMEWORK || NETCOREAPP
                     _memberAccessorStrategy = new ReflectionEmitMemberAccessor();
 #else
-                    // todo: should we attempt to detect here, or at least have a #define like #SUPPORTS_IL_EMIT
                     _memberAccessorStrategy = new ReflectionMemberAccessor();
 #endif
                 }
@@ -329,17 +387,23 @@ namespace System.Text.Json
             }
         }
 
-        internal JsonClassInfo GetOrAddClass(Type classType)
+        internal JsonClassInfo GetOrAddClass(Type type)
         {
             _haveTypesBeenCreated = true;
 
             // todo: for performance and reduced instances, consider using the converters and JsonClassInfo from s_defaultOptions by cloning (or reference directly if no changes).
-            if (!_classes.TryGetValue(classType, out JsonClassInfo? result))
+            // https://github.com/dotnet/runtime/issues/32357
+            if (!_classes.TryGetValue(type, out JsonClassInfo? result))
             {
-                result = _classes.GetOrAdd(classType, new JsonClassInfo(classType, this));
+                result = _classes.GetOrAdd(type, new JsonClassInfo(type, this));
             }
 
             return result;
+        }
+
+        internal bool TypeIsCached(Type type)
+        {
+            return _classes.ContainsKey(type);
         }
 
         internal JsonReaderOptions GetReaderOptions()
@@ -362,21 +426,6 @@ namespace System.Text.Json
                 SkipValidation = true
 #endif
             };
-        }
-
-        internal bool CreateRangeDelegatesContainsKey(string key)
-        {
-            return s_createRangeDelegates.ContainsKey(key);
-        }
-
-        internal bool TryGetCreateRangeDelegate(string delegateKey, [NotNullWhen(true)] out ImmutableCollectionCreator? createRangeDelegate)
-        {
-            return s_createRangeDelegates.TryGetValue(delegateKey, out createRangeDelegate) && createRangeDelegate != null;
-        }
-
-        internal bool TryAddCreateRangeDelegate(string key, ImmutableCollectionCreator createRangeDelegate)
-        {
-            return s_createRangeDelegates.TryAdd(key, createRangeDelegate);
         }
 
         internal void VerifyMutable()

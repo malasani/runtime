@@ -8,17 +8,16 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Asn1;
 
-#nullable enable
 namespace System.Security.Cryptography.Asn1
 {
     [StructLayout(LayoutKind.Sequential)]
     internal partial struct DirectoryStringAsn
     {
-        internal string TeletexString;
-        internal string PrintableString;
+        internal string? TeletexString;
+        internal string? PrintableString;
         internal ReadOnlyMemory<byte>? UniversalString;
-        internal string Utf8String;
-        internal string BmpString;
+        internal string? Utf8String;
+        internal string? BmpString;
 
 #if DEBUG
         static DirectoryStringAsn()

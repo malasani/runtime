@@ -6,6 +6,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 
 namespace Microsoft.Internal.Collections
@@ -68,12 +69,12 @@ namespace Microsoft.Internal.Collections
 
         public static IEnumerable<T>? ConcatAllowingNull<T>(this IEnumerable<T>? source, IEnumerable<T>? second)
         {
-            if (second == null || !second.FastAny())
+            if (second == null || !second.Any())
             {
                 return source;
             }
 
-            if (source == null || !source.FastAny())
+            if (source == null || !source.Any())
             {
                 return second;
             }
@@ -144,11 +145,13 @@ namespace Microsoft.Internal.Collections
         }
 
         public static List<T>? FastAppendToListAllowNulls<T>(
-                        this List<T>? source, T value,
+                        this List<T>? source, T? value,
                         IEnumerable<T>? second)
+            where T : class
         {
             if (second == null)
             {
+                Debug.Assert(value != null);
                 source = source.FastAppendToListAllowNulls(value);
             }
             else
@@ -198,23 +201,6 @@ namespace Microsoft.Internal.Collections
 
                 return EnumerableCardinality.TwoOrMore;
             }
-        }
-
-        public static bool FastAny<T>(this IEnumerable<T> source)
-        {
-            // Enumerable.Any<T> underneath doesn't cast to ICollection,
-            // like it does with many of the other LINQ methods.
-            // Below is significantly (4x) when mainly working with ICollection
-            // sources and a little slower if working with mainly IEnumerable<T>
-            // sources.
-
-            // Cast to ICollection instead of ICollection<T> for performance reasons.
-            if (source is ICollection collection)
-            {
-                return collection.Count > 0;
-            }
-
-            return source.Any();
         }
 
         public static Stack<T> Copy<T>(this Stack<T> stack)

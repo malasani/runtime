@@ -5,7 +5,6 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Diagnostics.Contracts;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -40,7 +39,9 @@ namespace System.Collections.Immutable
         /// <summary>
         /// An empty (initialized) instance of <see cref="ImmutableArray{T}"/>.
         /// </summary>
-#pragma warning disable CA1825 // Array.Empty<T>() doesn't exist in all configurations
+#pragma warning disable CA1825
+        // Array.Empty<T>() doesn't exist in all configurations
+        // Switching to Array.Empty also has a non-negligible impact on the working set memory
         public static readonly ImmutableArray<T> Empty = new ImmutableArray<T>(new T[0]);
 #pragma warning restore CA1825
 
@@ -225,12 +226,11 @@ namespace System.Collections.Immutable
         /// Copies the contents of this array to the specified array.
         /// </summary>
         /// <param name="destination">The array to copy to.</param>
-        [Pure]
         public void CopyTo(T[] destination)
         {
             var self = this;
             self.ThrowNullRefIfNotInitialized();
-            Array.Copy(self.array!, 0, destination, 0, self.Length);
+            Array.Copy(self.array!, destination, self.Length);
         }
 
         /// <summary>
@@ -238,7 +238,6 @@ namespace System.Collections.Immutable
         /// </summary>
         /// <param name="destination">The array to copy to.</param>
         /// <param name="destinationIndex">The index into the destination array to which the first copied element is written.</param>
-        [Pure]
         public void CopyTo(T[] destination, int destinationIndex)
         {
             var self = this;
@@ -253,7 +252,6 @@ namespace System.Collections.Immutable
         /// <param name="destination">The array to copy to.</param>
         /// <param name="destinationIndex">The index into the destination array to which the first copied element is written.</param>
         /// <param name="length">The number of elements to copy.</param>
-        [Pure]
         public void CopyTo(int sourceIndex, T[] destination, int destinationIndex, int length)
         {
             var self = this;
@@ -265,7 +263,6 @@ namespace System.Collections.Immutable
         /// Returns a builder that is populated with the same contents as this array.
         /// </summary>
         /// <returns>The new builder.</returns>
-        [Pure]
         public ImmutableArray<T>.Builder ToBuilder()
         {
             var self = this;
@@ -283,7 +280,6 @@ namespace System.Collections.Immutable
         /// Returns an enumerator for the contents of the array.
         /// </summary>
         /// <returns>An enumerator.</returns>
-        [Pure]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Enumerator GetEnumerator()
         {
@@ -298,7 +294,6 @@ namespace System.Collections.Immutable
         /// <returns>
         /// A hash code for this instance, suitable for use in hashing algorithms and data structures like a hash table.
         /// </returns>
-        [Pure]
         public override int GetHashCode()
         {
             var self = this;
@@ -312,7 +307,6 @@ namespace System.Collections.Immutable
         /// <returns>
         ///   <c>true</c> if the specified <see cref="object"/> is equal to this instance; otherwise, <c>false</c>.
         /// </returns>
-        [Pure]
         public override bool Equals(object? obj)
         {
             return obj is IImmutableArray other && this.array == other.Array;
@@ -325,7 +319,6 @@ namespace System.Collections.Immutable
         /// <returns>
         /// true if the current object is equal to the <paramref name="other"/> parameter; otherwise, false.
         /// </returns>
-        [Pure]
         [NonVersionable]
         public bool Equals(ImmutableArray<T> other)
         {
@@ -341,7 +334,6 @@ namespace System.Collections.Immutable
         /// Covariant upcasts from this method may be reversed by calling the
         /// <see cref="ImmutableArray{T}.As{TOther}"/>  or <see cref="ImmutableArray{T}.CastArray{TOther}"/>method.
         /// </remarks>
-        [Pure]
         public static ImmutableArray<T> CastUp<TDerived>(ImmutableArray<TDerived> items)
             where TDerived : class, T
         {
@@ -353,7 +345,6 @@ namespace System.Collections.Immutable
         /// array to an array of type <typeparam name="TOther"/>.
         /// </summary>
         /// <exception cref="InvalidCastException">Thrown if the cast is illegal.</exception>
-        [Pure]
         public ImmutableArray<TOther> CastArray<TOther>() where TOther : class
         {
             return new ImmutableArray<TOther>((TOther[])(object)array!);
@@ -374,7 +365,6 @@ namespace System.Collections.Immutable
         /// element types to their derived types. However, downcasting is only successful
         /// when it reverses a prior upcasting operation.
         /// </remarks>
-        [Pure]
         public ImmutableArray<TOther> As<TOther>() where TOther : class
         {
             return new ImmutableArray<TOther>((this.array as TOther[])!);
@@ -385,7 +375,6 @@ namespace System.Collections.Immutable
         /// </summary>
         /// <returns>An enumerator.</returns>
         /// <exception cref="InvalidOperationException">Thrown if the <see cref="IsDefault"/> property returns true.</exception>
-        [Pure]
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
         {
             var self = this;
@@ -398,7 +387,6 @@ namespace System.Collections.Immutable
         /// </summary>
         /// <returns>An enumerator.</returns>
         /// <exception cref="InvalidOperationException">Thrown if the <see cref="IsDefault"/> property returns true.</exception>
-        [Pure]
         IEnumerator IEnumerable.GetEnumerator()
         {
             var self = this;

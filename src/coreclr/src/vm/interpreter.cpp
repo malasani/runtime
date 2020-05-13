@@ -1663,7 +1663,9 @@ void Interpreter::JitMethodIfAppropriate(InterpreterMethodInfo* interpMethInfo, 
             // interpreter I didn't wring my hands too much trying to determine the ideal
             // policy.
 #ifdef FEATURE_TIERED_COMPILATION
-            GetAppDomain()->GetTieredCompilationManager()->AsyncPromoteMethodToTier1(md);
+            bool scheduleTieringBackgroundWork = false;
+            NativeCodeVersion activeCodeVersion = md->GetCodeVersionManager()->GetActiveILCodeVersion(md).GetActiveNativeCodeVersion(md);
+            GetAppDomain()->GetTieredCompilationManager()->AsyncPromoteToTier1(activeCodeVersion, &scheduleTieringBackgroundWork);
 #else
 #error FEATURE_INTERPRETER depends on FEATURE_TIERED_COMPILATION now
 #endif
@@ -1747,17 +1749,12 @@ static void MonitorEnter(Object* obj, BYTE* pbLockTaken)
 
     GCPROTECT_BEGININTERIOR(pbLockTaken);
 
-#ifdef _DEBUG
-    Thread *pThread = GetThread();
-    DWORD lockCount = pThread->m_dwLockCount;
-#endif
     if (GET_THREAD()->CatchAtSafePointOpportunistic())
     {
         GET_THREAD()->PulseGCMode();
     }
     objRef->EnterObjMonitor();
-    _ASSERTE ((objRef->GetSyncBlock()->GetMonitor()->GetRecursionLevel() == 1 && pThread->m_dwLockCount == lockCount + 1) ||
-              pThread->m_dwLockCount == lockCount);
+
     if (pbLockTaken != 0) *pbLockTaken = 1;
 
     GCPROTECT_END();
@@ -1804,7 +1801,7 @@ AwareLock* Interpreter::GetMonitorForStaticMethod()
     CORINFO_LOOKUP_KIND kind;
     {
         GCX_PREEMP();
-        kind = m_interpCeeInfo.getLocationOfThisType(m_methInfo->m_method);
+        m_interpCeeInfo.getLocationOfThisType(m_methInfo->m_method, &kind);
     }
     if (!kind.needsRuntimeLookup)
     {
@@ -8534,7 +8531,7 @@ void Interpreter::Unbox()
                 CorElementType type1 = pMT1->GetInternalCorElementType();
                 CorElementType type2 = pMT2->GetInternalCorElementType();
 
-                // we allow enums and their primtive type to be interchangable
+                // we allow enums and their primitive type to be interchangable
                 if (type1 == type2)
                 {
                     if ((pMT1->IsEnum() || pMT1->IsTruePrimitive()) &&
@@ -8695,17 +8692,11 @@ void Interpreter::UnboxAny()
                 }
                 else
                 {
-                    CorElementType type1 = pMT1->GetInternalCorElementType();
-                    CorElementType type2 = pMT2->GetInternalCorElementType();
-
-                    // we allow enums and their primtive type to be interchangable
-                    if (type1 == type2)
-                    {
-                        if ((pMT1->IsEnum() || pMT1->IsTruePrimitive()) &&
+                    if (pMT1->GetInternalCorElementType() == pMT2->GetInternalCorElementType() &&
+                            (pMT1->IsEnum() || pMT1->IsTruePrimitive()) &&
                             (pMT2->IsEnum() || pMT2->IsTruePrimitive()))
-                        {
-                            res = OpStackGet<Object*>(tos)->UnBox();
-                        }
+                    {
+                        res = OpStackGet<Object*>(tos)->UnBox();
                     }
                 }
 

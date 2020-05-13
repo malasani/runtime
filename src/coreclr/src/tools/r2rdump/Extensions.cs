@@ -2,13 +2,14 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using ILCompiler.Reflection.ReadyToRun;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection.Metadata.Ecma335;
-using System.Text;
+
+using ILCompiler.Reflection.ReadyToRun;
+using Internal.Runtime;
 
 namespace R2RDump
 {
@@ -27,9 +28,23 @@ namespace R2RDump
                 {
                     writer.Write($"Native Offset: 0x{theThis.BoundsList[i].NativeOffset:X}, ");
                 }
-                writer.WriteLine($"IL Offset: 0x{theThis.BoundsList[i].ILOffset:X}, Source Types: {theThis.BoundsList[i].SourceTypes}");
+                if (theThis.BoundsList[i].ILOffset == (uint)DebugInfoBoundsType.NoMapping)
+                {
+                    writer.WriteLine($"NoMapping, Source Types: {theThis.BoundsList[i].SourceTypes}");
+                }
+                else if (theThis.BoundsList[i].ILOffset == (uint)DebugInfoBoundsType.Prolog)
+                {
+                    writer.WriteLine($"Prolog, Source Types: {theThis.BoundsList[i].SourceTypes}");
+                }
+                else if (theThis.BoundsList[i].ILOffset == (uint)DebugInfoBoundsType.Epilog)
+                {
+                    writer.WriteLine($"Epilog, Source Types: {theThis.BoundsList[i].SourceTypes}");
+                }
+                else
+                {
+                    writer.WriteLine($"IL Offset: 0x{theThis.BoundsList[i].ILOffset:x4}, Source Types: {theThis.BoundsList[i].SourceTypes}");
+                }
             }
-
             writer.WriteLine("");
 
             if (dumpOptions.Normalize)
@@ -112,7 +127,7 @@ namespace R2RDump
 
         public static void WriteTo(this ReadyToRunSection theThis, TextWriter writer, DumpOptions options)
         {
-            writer.WriteLine($"Type:  {Enum.GetName(typeof(ReadyToRunSection.SectionType), theThis.Type)} ({theThis.Type:D})");
+            writer.WriteLine($"Type:  {Enum.GetName(typeof(ReadyToRunSectionType), theThis.Type)} ({theThis.Type:D})");
             if (!options.Naked)
             {
                 writer.WriteLine($"RelativeVirtualAddress: 0x{theThis.RelativeVirtualAddress:X8}");

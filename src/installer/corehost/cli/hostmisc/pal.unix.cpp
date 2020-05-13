@@ -2,6 +2,10 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+#if defined(TARGET_FREEBSD)
+#define _WITH_GETLINE
+#endif
+
 #include "pal.h"
 #include "utils.h"
 #include "trace.h"
@@ -13,20 +17,29 @@
 #include <fcntl.h>
 #include <fnmatch.h>
 #include <ctime>
+#include <locale>
+#include <codecvt>
+#include <pwd.h>
+#include "config.h"
 
-#if defined(__APPLE__)
+#if defined(TARGET_OSX)
 #include <mach-o/dyld.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #endif
 
-#if defined(__LINUX__)
+#if defined(TARGET_LINUX)
 #define symlinkEntrypointExecutable "/proc/self/exe"
-#elif !defined(__APPLE__)
+#elif !defined(TARGET_OSX)
 #define symlinkEntrypointExecutable "/proc/curproc/exe"
 #endif
 
-pal::string_t pal::to_string(int value) { return std::to_string(value); }
+#if !HAVE_DIRENT_D_TYPE
+#define DT_UNKNOWN 0
+#define DT_DIR 4
+#define DT_REG 8
+#define DT_LNK 10
+#endif
 
 pal::string_t pal::to_lower(const pal::string_t& in)
 {
@@ -57,35 +70,49 @@ bool pal::touch_file(const pal::string_t& path)
     return true;
 }
 
-void* pal::map_file_readonly(const pal::string_t& path, size_t& length)
+static void* map_file(const pal::string_t& path, size_t* length, int prot, int flags)
 {
-    int fd = open(path.c_str(), O_RDONLY, (S_IRUSR | S_IRGRP | S_IROTH));
+    int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1)
     {
-        trace::warning(_X("Failed to map file. open(%s) failed with error %d"), path.c_str(), errno);
+        trace::error(_X("Failed to map file. open(%s) failed with error %d"), path.c_str(), errno);
         return nullptr;
     }
 
     struct stat buf;
     if (fstat(fd, &buf) != 0)
     {
-        trace::warning(_X("Failed to map file. fstat(%s) failed with error %d"), path.c_str(), errno);
+        trace::error(_X("Failed to map file. fstat(%s) failed with error %d"), path.c_str(), errno);
         close(fd);
         return nullptr;
     }
+    size_t size = buf.st_size;
 
-    length = buf.st_size;
-    void* address = mmap(nullptr, length, PROT_READ, MAP_SHARED, fd, 0);
-
-    if(address == nullptr)
+    if (length != nullptr)
     {
-        trace::warning(_X("Failed to map file. mmap(%s) failed with error %d"), path.c_str(), errno);
-        close(fd);
-        return nullptr;
+        *length = size;
+    }
+
+    void* address = mmap(nullptr, size, prot, flags, fd, 0);
+
+    if (address == MAP_FAILED)
+    {
+        trace::error(_X("Failed to map file. mmap(%s) failed with error %d"), path.c_str(), errno);
+        address = nullptr;
     }
 
     close(fd);
     return address;
+}
+
+const void* pal::mmap_read(const string_t& path, size_t* length)
+{
+    return map_file(path, length, PROT_READ, MAP_SHARED);
+}
+
+void* pal::mmap_copy_on_write(const string_t& path, size_t* length)
+{
+    return map_file(path, length, PROT_READ | PROT_WRITE, MAP_PRIVATE);
 }
 
 bool pal::getcwd(pal::string_t* recv)
@@ -161,7 +188,7 @@ bool pal::get_loaded_library(
     /*out*/ pal::string_t *path)
 {
     pal::string_t library_name_local;
-#if defined(__APPLE__)
+#if defined(TARGET_OSX)
     if (!pal::is_path_rooted(library_name))
         library_name_local.append("@rpath/");
 #endif
@@ -197,7 +224,7 @@ bool pal::load_library(const string_t* path, dll_t* dll)
     *dll = dlopen(path->c_str(), RTLD_LAZY);
     if (*dll == nullptr)
     {
-        trace::error(_X("Failed to load %s, error: %s"), path, dlerror());
+        trace::error(_X("Failed to load %s, error: %s"), path->c_str(), dlerror());
         return false;
     }
     return true;
@@ -225,6 +252,16 @@ void pal::unload_library(dll_t library)
 int pal::xtoi(const char_t* input)
 {
     return atoi(input);
+}
+
+bool pal::unicode_palstring(const char16_t* str, pal::string_t* out)
+{
+    out->clear();
+
+    std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> conversion;
+    out->assign(conversion.to_bytes(str));
+
+    return true;
 }
 
 bool pal::is_path_rooted(const pal::string_t& path)
@@ -306,7 +343,7 @@ bool is_read_write_able_directory(pal::string_t& dir)
 bool pal::get_temp_directory(pal::string_t& tmp_dir)
 {
     // First, check for the POSIX standard environment variable
-    if (pal::getenv(_X("TMPDIR"), &tmp_dir))
+    if (getenv(_X("TMPDIR"), &tmp_dir))
     {
         return is_read_write_able_directory(tmp_dir);
     }
@@ -329,6 +366,55 @@ bool pal::get_temp_directory(pal::string_t& tmp_dir)
     }
 
     return false;
+}
+
+bool pal::get_default_bundle_extraction_base_dir(pal::string_t& extraction_dir)
+{
+    if (!get_temp_directory(extraction_dir))
+    {
+        return false;
+    }
+
+    append_path(&extraction_dir, _X(".net"));
+    pal::string_t dotnetdir(extraction_dir);
+
+    // getuid() is the real user ID, and the call has no defined errors.
+    struct passwd* passwd = getpwuid(getuid());
+    if (passwd == nullptr || passwd->pw_name == nullptr)
+    {
+        return false;
+    }
+
+    append_path(&extraction_dir, passwd->pw_name);
+
+    if (is_read_write_able_directory(extraction_dir))
+    {
+        return true;
+    }
+
+    // Create $TMPDIR/.net accessible to everyone
+    if (::mkdir(dotnetdir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) == 0)
+    {
+        // In the above mkdir() system call, some permissions are strangely dropped!
+        // Linux drops S_IWO and Mac drops S_IWG | S_IWO.
+        // So these are again explicitly set by calling chmod()
+        if (chmod(dotnetdir.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) != 0)
+        {
+            return false;
+        }
+    }
+    else if (errno != EEXIST)
+    {
+        return false;
+    }
+
+    // Create $TMPDIR/.net/username accessible only to the user
+    if (::mkdir(extraction_dir.c_str(), S_IRWXU | S_ISVTX) != 0 && errno != EEXIST)
+    {
+        return false;
+    }
+
+    return is_read_write_able_directory(extraction_dir);
 }
 
 bool pal::get_global_dotnet_dirs(std::vector<pal::string_t>* recv)
@@ -417,7 +503,7 @@ bool pal::get_default_installation_dir(pal::string_t* recv)
     }
     //  ***************************
 
-#if defined(__APPLE__)
+#if defined(TARGET_OSX)
      recv->assign(_X("/usr/local/share/dotnet"));
 #else
      recv->assign(_X("/usr/share/dotnet"));
@@ -428,10 +514,10 @@ bool pal::get_default_installation_dir(pal::string_t* recv)
 pal::string_t trim_quotes(pal::string_t stringToCleanup)
 {
     pal::char_t quote_array[2] = {'\"', '\''};
-    for(size_t index = 0; index < sizeof(quote_array)/sizeof(quote_array[0]); index++)
+    for (size_t index = 0; index < sizeof(quote_array)/sizeof(quote_array[0]); index++)
     {
         size_t pos = stringToCleanup.find(quote_array[index]);
-        while(pos != std::string::npos)
+        while (pos != std::string::npos)
         {
             stringToCleanup = stringToCleanup.erase(pos, 1);
             pos = stringToCleanup.find(quote_array[index]);
@@ -441,7 +527,7 @@ pal::string_t trim_quotes(pal::string_t stringToCleanup)
     return stringToCleanup;
 }
 
-#if defined(__APPLE__)
+#if defined(TARGET_OSX)
 pal::string_t pal::get_current_os_rid_platform()
 {
     pal::string_t ridOS;
@@ -481,7 +567,7 @@ pal::string_t pal::get_current_os_rid_platform()
 
     return ridOS;
 }
-#elif defined(__FreeBSD__)
+#elif defined(TARGET_FREEBSD)
 // On FreeBSD get major verion. Minors should be compatible
 pal::string_t pal::get_current_os_rid_platform()
 {
@@ -629,7 +715,7 @@ pal::string_t pal::get_current_os_rid_platform()
 }
 #endif
 
-#if defined(__APPLE__)
+#if defined(TARGET_OSX)
 bool pal::get_own_executable_path(pal::string_t* recv)
 {
     uint32_t path_length = 0;
@@ -644,7 +730,7 @@ bool pal::get_own_executable_path(pal::string_t* recv)
     }
     return false;
 }
-#elif defined(__FreeBSD__)
+#elif defined(TARGET_FREEBSD)
 bool pal::get_own_executable_path(pal::string_t* recv)
 {
     int mib[4];
@@ -771,8 +857,14 @@ static void readdir(const pal::string_t& path, const pal::string_t& pattern, boo
                 continue;
             }
 
+#if HAVE_DIRENT_D_TYPE
+            int dirEntryType = entry->d_type;
+#else
+            int dirEntryType = DT_UNKNOWN;
+#endif
+
             // We are interested in files only
-            switch (entry->d_type)
+            switch (dirEntryType)
             {
             case DT_DIR:
                 break;
@@ -853,7 +945,7 @@ bool pal::is_running_in_wow64()
 
 bool pal::are_paths_equal_with_normalized_casing(const string_t& path1, const string_t& path2)
 {
-#if defined(__APPLE__)
+#if defined(TARGET_OSX)
     // On Mac, paths are case-insensitive
     return (strcasecmp(path1.c_str(), path2.c_str()) == 0);
 #else
